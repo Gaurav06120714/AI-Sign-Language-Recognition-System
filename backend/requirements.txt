@@ -1,0 +1,11 @@
+opencv-python
+mediapipe
+numpy
+scikit-learn
+pandas
+fastapi
+uvicorn
+spacy
+language-tool-python
+gtts
+pyttsx3
