@@ -1,5 +1,23 @@
-.DS_Store
-__pycache__/
-*.pyc.DS_Store
+# Python
 __pycache__/
 *.pyc
+*.pyo
+venv/
+.venv/
+*.pkl
+*.egg-info/
+
+# Environment
+.env
+backend/.env
+frontend/.env
+
+# Node
+node_modules/
+dist/
+
+# macOS
+.DS_Store
+
+# Models (large files)
+backend/models/*.pkl

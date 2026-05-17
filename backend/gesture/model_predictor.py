@@ -1,45 +1,54 @@
 import os
 import pickle
+import json
+import numpy as np
+from dotenv import load_dotenv
 
-# Configuration
-# Resolving path relative to backend/gesture/
-MODEL_FILE = "../../models/gesture_model.pkl"
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../.env"))
 
-class GesturePredictor:
-    def __init__(self, model_path=MODEL_FILE):
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"Trained model not found at {model_path}. Train the model first.")
-        
-        # Load trained model
-        with open(model_path, 'rb') as f:
-            self.model = pickle.load(f)
+MODEL_PATH = os.getenv("MODEL_PATH", "../models/gesture_model.pkl")
+MODEL_META_PATH = os.getenv("MODEL_META_PATH", "../models/model_meta.json")
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.70"))
 
-    def predict(self, features):
-        if features is None or len(features) != 63:
-            return None
-        
-        # Input: NumPy array (63,)
-        # Reshape to (1, 63) since sklearn expects a 2D array for a single sample
-        input_data = features.reshape(1, -1)
-        
-        # Output: Predicted label
-        prediction = self.model.predict(input_data)
-        return prediction[0]
+_model = None
+_classes = None
 
-# Pre-load instance for standalone function usage
-_predictor_instance = None
 
-def predict_gesture(features):
+def _load_model():
+    global _model, _classes
+    abs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), MODEL_PATH))
+    if not os.path.isfile(abs_path):
+        raise FileNotFoundError(f"Model not found at {abs_path}. Run train_model.py first.")
+    with open(abs_path, "rb") as f:
+        _model = pickle.load(f)
+    _classes = list(_model.classes_)
+
+
+def predict_gesture(features: np.ndarray) -> dict:
     """
-    Input: NumPy array (63,)
-    Output: Predicted label
+    Returns {label, confidence, accepted} for a 63-element feature vector.
     """
-    global _predictor_instance
-    if _predictor_instance is None:
+    global _model, _classes
+    if _model is None:
+        _load_model()
+
+    if features is None or len(features) != 63:
+        return {"label": None, "confidence": 0.0, "accepted": False}
+
+    proba = _model.predict_proba(features.reshape(1, -1))[0]
+    idx = int(np.argmax(proba))
+    confidence = float(proba[idx])
+    label = _classes[idx]
+    accepted = confidence >= CONFIDENCE_THRESHOLD
+
+    return {"label": label, "confidence": round(confidence, 4), "accepted": accepted}
+
+
+def get_supported_gestures() -> list:
+    global _model, _classes
+    if _model is None:
         try:
-            _predictor_instance = GesturePredictor()
-        except FileNotFoundError as e:
-            print(e)
-            return "Model Not Found"
-            
-    return _predictor_instance.predict(features)
+            _load_model()
+        except FileNotFoundError:
+            return []
+    return _classes

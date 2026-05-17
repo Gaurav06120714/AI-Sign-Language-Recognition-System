@@ -2,130 +2,100 @@ import cv2
 import os
 import csv
 import numpy as np
+from dotenv import load_dotenv
 from hand_detector import HandDetector
 from feature_extractor import extract_features
 
-# Configuration
-DATASET_DIR = "dataset"
-DATASET_FILE = os.path.join(DATASET_DIR, "gesture_dataset.csv")
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../.env"))
 
-def create_alphabet_mapping():
-    """
-    Create automatic key-to-label mapping for letters A-Z.
-    Maps keyboard keys 'a' through 'z' to labels 'A' through 'Z'.
-    """
-    alphabet_map = {}
-    for i in range(26):
-        key_code = ord('a') + i  # ASCII codes for 'a' to 'z'
-        label = chr(ord('A') + i)  # Labels 'A' to 'Z'
-        alphabet_map[key_code] = label
-    return alphabet_map
+BASE = os.path.dirname(__file__)
+DATA_PATH = os.getenv("DATA_PATH", "../../data/gesture_dataset.csv")
+DATASET_FILE = os.path.abspath(os.path.join(BASE, DATA_PATH))
 
-def initialize_dataset_file():
-    """
-    Create dataset directory and initialize CSV file with header if it doesn't exist.
-    """
-    os.makedirs(DATASET_DIR, exist_ok=True)
-    
+LABEL_MAP = {ord('a') + i: chr(ord('A') + i) for i in range(26)}
+SAMPLE_COUNTS: dict[str, int] = {}
+
+
+def initialize_dataset():
+    os.makedirs(os.path.dirname(DATASET_FILE), exist_ok=True)
     if not os.path.isfile(DATASET_FILE):
-        with open(DATASET_FILE, 'w', newline='') as f:
+        with open(DATASET_FILE, "w", newline="") as f:
             writer = csv.writer(f)
-            header = ["label"] + [f"f{i}" for i in range(1, 64)]
-            writer.writerow(header)
-        print(f"Created new dataset file: {DATASET_FILE}")
+            writer.writerow(["label"] + [f"f{i}" for i in range(1, 64)])
+        print(f"Created dataset: {DATASET_FILE}")
     else:
-        print(f"Using existing dataset file: {DATASET_FILE}")
+        import pandas as pd
+        df = pd.read_csv(DATASET_FILE)
+        for label, count in df["label"].value_counts().items():
+            SAMPLE_COUNTS[label] = int(count)
+        print(f"Existing dataset: {len(df)} samples across {df['label'].nunique()} gestures")
 
-def save_sample(label, features):
-    """
-    Save a single sample (label + 63 features) to the CSV file.
-    
-    Args:
-        label: The gesture label (A-Z)
-        features: NumPy array of 63 feature values
-    """
-    row = [label] + features.tolist()
-    with open(DATASET_FILE, 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(row)
+
+def save_sample(label: str, features: np.ndarray):
+    with open(DATASET_FILE, "a", newline="") as f:
+        csv.writer(f).writerow([label] + features.tolist())
+    SAMPLE_COUNTS[label] = SAMPLE_COUNTS.get(label, 0) + 1
+
 
 def main():
-    # Initialize dataset
-    initialize_dataset_file()
-    
-    # Create A-Z mapping
-    LABEL_MAP = create_alphabet_mapping()
-    
-    # Initialize camera and hand detector
+    initialize_dataset()
+
     cap = cv2.VideoCapture(0)
     detector = HandDetector()
 
-    print("\n" + "="*60)
-    print("    SIGN LANGUAGE ALPHABET DATA COLLECTOR (A-Z)")
-    print("="*60)
-    print("Instructions:")
-    print("  • Press 'a' to record gesture A")
-    print("  • Press 'b' to record gesture B")
-    print("  • ... and so on up to 'z' for gesture Z")
-    print("  • Press 'q' to quit")
-    print("="*60 + "\n")
+    print("\n" + "=" * 55)
+    print("   SIGN LANGUAGE DATA COLLECTOR  (A–Z)")
+    print("=" * 55)
+    print("  Press a–z to record that letter's gesture")
+    print("  Press 'q' to quit")
+    print("=" * 55 + "\n")
 
     while True:
         success, frame = cap.read()
         if not success:
-            print("Error: Failed to capture frame from webcam.")
             break
 
-        # Flip frame for mirror effect
         frame = cv2.flip(frame, 1)
-
-        # Detect hands
         hand_landmarks_list = detector.detect_hands(frame)
 
-        # Draw hand landmarks if detected
         if hand_landmarks_list:
-            for hand_landmarks in hand_landmarks_list:
-                detector.draw_landmarks(frame, hand_landmarks)
-        
-        # Display instructions on frame
-        cv2.putText(frame, "Press a-z to record letter | q to quit", 
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
-        # Display hand detection status
-        status_text = f"Hand Detected: {'YES' if hand_landmarks_list else 'NO'}"
-        status_color = (0, 255, 0) if hand_landmarks_list else (0, 0, 255)
-        cv2.putText(frame, status_text, (10, 60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
-        
-        cv2.imshow("Sign Language Alphabet Collector", frame)
+            for hl in hand_landmarks_list:
+                detector.draw_landmarks(frame, hl)
 
-        # Handle keyboard input
+        detected = bool(hand_landmarks_list)
+        status_color = (0, 220, 0) if detected else (0, 0, 220)
+        cv2.putText(frame, f"Hand: {'DETECTED' if detected else 'NOT DETECTED'}",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+        cv2.putText(frame, "Press a-z to record | q to quit",
+                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
+
+        counts_str = "  ".join([f"{k}:{v}" for k, v in sorted(SAMPLE_COUNTS.items())])
+        cv2.putText(frame, counts_str[:80], (10, frame.shape[0] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 0), 1)
+
+        cv2.imshow("Sign Language Collector", frame)
+
         key = cv2.waitKey(1) & 0xFF
-        
-        if key == ord('a'):
-            print("\nExiting dataset collector...")
+        if key == ord("q"):
             break
-        elif key in LABEL_MAP:
+        elif key in LABEL_MAP:  # BUG FIX: was ord('a') which quit on pressing A
             label = LABEL_MAP[key]
-            
             if hand_landmarks_list:
-                # Extract features from the first detected hand
                 features = extract_features(hand_landmarks_list[0])
-                
                 if features is not None and len(features) == 63:
-                    # Save to CSV
                     save_sample(label, features)
-                    print(f"✓ Recorded sample for: {label}")
+                    print(f"✓ {label}  (total: {SAMPLE_COUNTS[label]})")
                 else:
-                    print(f"✗ Error: Invalid feature vector for {label}")
+                    print(f"✗ Bad features for {label}")
             else:
-                print(f"✗ No hand detected. Please show your hand for gesture {label}")
+                print(f"✗ No hand detected for {label}")
 
-    # Cleanup
     cap.release()
     cv2.destroyAllWindows()
-    print("\nDataset collection completed.")
-    print(f"Data saved to: {DATASET_FILE}\n")
+    print(f"\nDone. Dataset → {DATASET_FILE}")
+    total = sum(SAMPLE_COUNTS.values())
+    print(f"Total samples: {total}")
+
 
 if __name__ == "__main__":
     main()

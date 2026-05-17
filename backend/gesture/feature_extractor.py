@@ -1,28 +1,27 @@
 import numpy as np
 
+
 def extract_features(hand_landmarks):
-    """
-    Extracts, normalizes, and flattens 21 hand landmarks into a 63-element vector.
-    """
+    """Extract 63 normalized features from MediaPipe Python hand landmarks."""
     if not hand_landmarks:
         return None
 
-    # Step 1: Convert to NumPy array (21 x 3)
     landmarks = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark])
+    translated = landmarks - landmarks[0]
+    max_val = np.max(np.abs(translated))
+    scaled = translated / max_val if max_val > 0 else translated
 
-    # Step 2: Translate wrist to origin
-    # Landmark 0 is the wrist for MediaPipe
-    base_point = landmarks[0]
-    translated_landmarks = landmarks - base_point
+    return scaled.flatten()
 
-    # Step 3: Scale to remove size differences
-    max_value = np.max(np.abs(translated_landmarks))
-    if max_value > 0:
-        scaled_landmarks = translated_landmarks / max_value
-    else:
-        scaled_landmarks = translated_landmarks
 
-    # Step 4: Flatten to 63-element vector
-    flattened_features = scaled_landmarks.flatten()
+def extract_features_from_list(landmarks_list: list):
+    """Extract 63 normalized features from MediaPipe JS landmark list [{x,y,z}...]."""
+    if not landmarks_list or len(landmarks_list) != 21:
+        return None
 
-    return flattened_features
+    landmarks = np.array([[lm["x"], lm["y"], lm["z"]] for lm in landmarks_list])
+    translated = landmarks - landmarks[0]
+    max_val = np.max(np.abs(translated))
+    scaled = translated / max_val if max_val > 0 else translated
+
+    return scaled.flatten()
